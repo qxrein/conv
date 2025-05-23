@@ -1,5 +1,5 @@
 {
-  description = "MD to PDF converter in D (WASM)";
+  description = "Native MD to PDF converter in D";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -10,41 +10,26 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        ldc = pkgs.ldc.overrideAttrs (old: {
-          cmakeFlags = (old.cmakeFlags or []) ++ ["-DLDC_EXPERIMENTAL_WASM=ON"];
-        });
       in
       {
         packages.default = pkgs.stdenv.mkDerivation {
           name = "conv";
-          src = ./source;
+          src = ./.;
 
-          nativeBuildInputs = [
-            ldc
-            pkgs.dub
-            pkgs.binaryen
-          ];
+          nativeBuildInputs = [ pkgs.ldc ];
 
           buildPhase = ''
-            dub build --compiler=ldc2 --build=release --arch=wasm32-unknown-unknown-wasm
+            ldc2 -O -release -of=conv src/conv.d
           '';
 
           installPhase = ''
             mkdir -p $out/bin
-            cp conv.wasm $out/bin/conv.wasm
-            echo '#!/bin/sh' > $out/bin/conv
-            echo '${pkgs.wasmtime}/bin/wasmtime run $out/bin/conv.wasm "$@"' >> $out/bin/conv
-            chmod +x $out/bin/conv
+            cp conv $out/bin/
           '';
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = [
-            ldc
-            pkgs.dub
-            pkgs.binaryen
-            pkgs.wasmtime
-          ];
+          buildInputs = [ pkgs.ldc ];
         };
       });
 }

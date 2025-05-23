@@ -1,5 +1,5 @@
 # conv
-convert .md to .pdf in cli with wasm compilation.
+convert .md to .pdf in cli.
 written in D.
 
 ## License
