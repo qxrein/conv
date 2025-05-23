@@ -1,0 +1,13 @@
+*
+!.gitignore
+
+!*.md
+!*.nix
+
+!src/
+!src/*.d
+!flake.lock
+!LICENSE
+
+!docs/
+!docs/*.md
