@@ -70,25 +70,28 @@ public:
         currentY -= lineHeight + 5;
     }
     
-    void addBlockquote(string text) {
+   void addBlockquote(string text) {
         checkNewPage();
+    
+        int textHeight = lineHeight;
+        int boxHeight = lineHeight + 4;
+    
         content ~= "q\n";
-        content ~= (margin-5).to!string ~ " " ~ (currentY+2).to!string ~ " " ~ 
-                  (pageWidth+10).to!string ~ " " ~ (lineHeight-4).to!string ~ " re\n";
+        content ~= (margin-5).to!string ~ " " ~ (currentY-2).to!string ~ " " ~ 
+                  (pageWidth+10).to!string ~ " " ~ boxHeight.to!string ~ " re\n";
         content ~= "0.95 0.95 0.95 rg\n";
         content ~= "f\n";
-        content ~= "0.7 0.7 0.7 RG\n"; 
-        content ~= "0.5 w\n"; 
-        content ~= (margin-5).to!string ~ " " ~ (currentY+2).to!string ~ " " ~ 
-                  (pageWidth+10).to!string ~ " " ~ (lineHeight-4).to!string ~ " re\n";
+        content ~= "0.7 0.7 0.7 RG\n";
+        content ~= "0.5 w\n";
+        content ~= (margin-5).to!string ~ " " ~ (currentY-2).to!string ~ " " ~ 
+                  (pageWidth+10).to!string ~ " " ~ boxHeight.to!string ~ " re\n";
         content ~= "S\n";
-        
-        // Add text
+    
         content ~= "BT\n/F1 " ~ fontSize.to!string ~ " Tf\n";
         content ~= margin.to!string ~ " " ~ currentY.to!string ~ " Td\n";
         content ~= "(" ~ escapeText(text) ~ ") Tj\nET\n";
         content ~= "Q\n";
-        
+    
         currentY -= lineHeight;
     }
     
