@@ -22,6 +22,7 @@ private:
     int pageCount = 1;
     int maxPages = 100;
     int minY = 50;
+    bool inBlockquote = false;
     
 public:
     this(string title = "", string author = "") {
@@ -34,17 +35,16 @@ public:
         lineHeight = size + 8;
     }
     
-    void setMargins(int top, int bottom, int left, int right) {
-        margin = left;
-        currentY = top;
-        minY = bottom;
+    void setMargins(int marginSize) {
+        margin = marginSize;
+        pageWidth = 612 - 2 * margin; 
     }
     
     void addHeader1(string text) {
         checkNewPage();
         int oldSize = fontSize;
         setFontSize(18);
-        addText(text);
+        addCenteredText(text);
         setFontSize(oldSize);
         currentY -= lineHeight;
     }
@@ -60,8 +60,18 @@ public:
     
     void addText(string text) {
         checkNewPage();
+        if (inBlockquote) {
+            drawQuoteBox();
+        }
         content ~= "BT\n/F1 " ~ fontSize.to!string ~ " Tf\n";
         content ~= margin.to!string ~ " " ~ currentY.to!string ~ " Td\n";
+        content ~= "(" ~ escapeText(wrapText(text)) ~ ") Tj\nET\n";
+        currentY -= lineHeight;
+    }
+    
+    void addCenteredText(string text) {
+        checkNewPage();
+        content ~= "BT\n/F1 " ~ fontSize.to!string ~ " Tf\n";
         content ~= "(" ~ escapeText(text) ~ ") Tj\nET\n";
         currentY -= lineHeight;
     }
@@ -71,7 +81,7 @@ public:
             checkNewPage();
             content ~= "BT\n/F1 " ~ fontSize.to!string ~ " Tf\n";
             content ~= margin.to!string ~ " " ~ currentY.to!string ~ " Td\n";
-            content ~= "(• " ~ escapeText(item) ~ ") Tj\nET\n";
+            content ~= "(• " ~ escapeText(wrapText(item)) ~ ") Tj\nET\n";
             currentY -= lineHeight;
         }
     }
@@ -80,19 +90,54 @@ public:
         checkNewPage();
         content ~= "BT\n/F1 " ~ fontSize.to!string ~ " Tf\n";
         content ~= margin.to!string ~ " " ~ currentY.to!string ~ " Td\n";
-        content ~= "[(" ~ escapeText(text) ~ ") /URI (" ~ escapeText(url) ~ ")] TJ\nET\n";
+        content ~= "[(" ~ escapeText(wrapText(text)) ~ ") /URI (" ~ escapeText(url) ~ ")] TJ\nET\n";
         currentY -= lineHeight;
     }
     
-    void addBlockquote(string text) {
+    void startBlockquote() {
         checkNewPage();
-        int oldSize = fontSize;
-        setFontSize(fontSize-2);
-        content ~= "BT\n/F1 " ~ fontSize.to!string ~ " Tf\n";
-        content ~= (margin+10).to!string ~ " " ~ currentY.to!string ~ " Td\n";
-        content ~= "(" ~ escapeText(text) ~ ") Tj\nET\n";
-        setFontSize(oldSize);
-        currentY -= lineHeight;
+        inBlockquote = true;
+        drawQuoteBox();
+    }
+    
+    void endBlockquote() {
+        inBlockquote = false;
+        currentY -= lineHeight/2;
+    }
+    
+    void drawQuoteBox() {
+        content ~= "q\n";
+        content ~= (margin-5).to!string ~ " " ~ (currentY+5).to!string ~ " " ~ 
+                  (pageWidth+10).to!string ~ " " ~ (lineHeight-5).to!string ~ " re\n";
+        content ~= "1 0.9 0.9 rg\n"; 
+        content ~= "f\n";
+        content ~= "0.8 0 0 RG\n"; 
+        content ~= "1 w\n"; 
+        content ~= (margin-5).to!string ~ " " ~ (currentY+5).to!string ~ " " ~ 
+                  (pageWidth+10).to!string ~ " " ~ (lineHeight-5).to!string ~ " re\n";
+        content ~= "S\n";
+        content ~= "Q\n";
+    }
+    
+    string wrapText(string text) {
+        string[] words = split(text);
+        string line;
+        string result;
+        int maxWidth = pageWidth / (fontSize / 2); 
+        
+        foreach(word; words) {
+            if (line.length + word.length + 1 > maxWidth) {
+                result ~= line ~ "\n";
+                line = word;
+            } else {
+                if (line.length > 0) line ~= " ";
+                line ~= word;
+            }
+        }
+        if (line.length > 0) {
+            result ~= line;
+        }
+        return result;
     }
     
     void checkNewPage() {
@@ -105,6 +150,7 @@ public:
         content ~= "showpage\n";
         currentY = 750;
         pageCount++;
+        inBlockquote = false;
     }
     
     ubyte[] generate() {
@@ -119,7 +165,8 @@ public:
         pdf ~= "] /Count " ~ pageCount.to!string ~ " >>\nendobj\n";
         
         for(int i = 0; i < pageCount; i++) {
-            pdf ~= (3+i).to!string ~ " 0 obj\n<< /Type /Page /Parent 2 0 R /Contents " ~ (3+pageCount+i).to!string ~ " 0 R >>\nendobj\n";
+            pdf ~= (3+i).to!string ~ " 0 obj\n<< /Type /Page /Parent 2 0 R /Contents " ~ 
+                  (3+pageCount+i).to!string ~ " 0 R >>\nendobj\n";
         }
         
         string[] contentPages = content.split("showpage\n");
@@ -148,7 +195,8 @@ public:
             pos = pdf.length;
         }
         
-        pdf ~= "trailer\n<< /Size " ~ (5+2*pageCount).to!string ~ " /Root 1 0 R /Info " ~ (4+2*pageCount).to!string ~ " 0 R >>\n";
+        pdf ~= "trailer\n<< /Size " ~ (5+2*pageCount).to!string ~ " /Root 1 0 R /Info " ~ 
+              (4+2*pageCount).to!string ~ " 0 R >>\n";
         pdf ~= "startxref\n" ~ xrefPos.to!string ~ "\n%%EOF\n";
         
         return cast(ubyte[])pdf;
@@ -192,11 +240,13 @@ void processMarkdown(MarkdownParser parser, PDFGenerator pdf) {
         if (line.length == 0) continue;
         
         if (line.startsWith("> ")) {
+            pdf.startBlockquote();
             string quote = line[2..$].strip();
             while (parser.hasMoreLines() && parser.peekLine().strip().startsWith("> ")) {
                 quote ~= " " ~ parser.nextLine()[2..$].strip();
             }
-            pdf.addBlockquote(quote);
+            pdf.addText(quote);
+            pdf.endBlockquote();
         }
         else if (line.startsWith("## ")) {
             pdf.addHeader2(line[3..$].strip());
@@ -228,10 +278,7 @@ void main(string[] args) {
     string title = "";
     string author = "";
     int fontSize = 12;
-    int topMargin = 750;
-    int bottomMargin = 50;
-    int leftMargin = 50;
-    int rightMargin = 50;
+    int margin = 50;
     
     getopt(args,
         "input|i", "Input Markdown file", &inputFile,
@@ -239,23 +286,17 @@ void main(string[] args) {
         "title|t", "Document title", &title,
         "author|a", "Document author", &author,
         "font-size|f", "Base font size (default: 12)", &fontSize,
-        "top-margin|T", "Top margin (default: 750)", &topMargin,
-        "bottom-margin|B", "Bottom margin (default: 50)", &bottomMargin,
-        "left-margin|L", "Left margin (default: 50)", &leftMargin,
-        "right-margin|R", "Right margin (default: 50)", &rightMargin
+        "margin|m", "Page margin (default: 50)", &margin
     );
     
     if (inputFile.empty || outputFile.empty) {
         stderr.writeln("Error: Both input and output files must be specified");
         stderr.writeln("Usage: conv -i input.md -o output.pdf [options]");
         stderr.writeln("Options:");
-        stderr.writeln("  -t, --title        Document title");
-        stderr.writeln("  -a, --author       Document author");
-        stderr.writeln("  -f, --font-size    Base font size (default: 12)");
-        stderr.writeln("  -T, --top-margin   Top margin (default: 750)");
-        stderr.writeln("  -B, --bottom-margin Bottom margin (default: 50)");
-        stderr.writeln("  -L, --left-margin  Left margin (default: 50)");
-        stderr.writeln("  -R, --right-margin Right margin (default: 50)");
+        stderr.writeln("  -t, --title      Document title");
+        stderr.writeln("  -a, --author     Document author");
+        stderr.writeln("  -f, --font-size  Base font size (default: 12)");
+        stderr.writeln("  -m, --margin     Page margin (default: 50)");
         return;
     }
     
@@ -263,7 +304,7 @@ void main(string[] args) {
         string mdContent = readText(inputFile);
         auto pdf = new PDFGenerator(title, author);
         pdf.setFontSize(fontSize);
-        pdf.setMargins(topMargin, bottomMargin, leftMargin, rightMargin);
+        pdf.setMargins(margin);
         
         auto parser = MarkdownParser(mdContent);
         processMarkdown(parser, pdf);
