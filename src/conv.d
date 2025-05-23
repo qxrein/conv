@@ -16,9 +16,12 @@ private:
     string author;
     int fontSize = 12;
     int currentY = 750;
-    const int lineHeight = 20;
-    const int pageWidth = 550;
-    const int margin = 50;
+    int lineHeight = 20;
+    int pageWidth = 550;
+    int margin = 50;
+    int pageCount = 1;
+    int maxPages = 100;
+    int minY = 50;
     
 public:
     this(string title = "", string author = "") {
@@ -26,21 +29,37 @@ public:
         this.author = author;
     }
     
+    void setFontSize(int size) {
+        fontSize = size;
+        lineHeight = size + 8;
+    }
+    
+    void setMargins(int top, int bottom, int left, int right) {
+        margin = left;
+        currentY = top;
+        minY = bottom;
+    }
+    
     void addHeader1(string text) {
-        fontSize = 18;
+        checkNewPage();
+        int oldSize = fontSize;
+        setFontSize(18);
         addText(text);
+        setFontSize(oldSize);
         currentY -= lineHeight;
-        fontSize = 12;
     }
     
     void addHeader2(string text) {
-        fontSize = 16;
+        checkNewPage();
+        int oldSize = fontSize;
+        setFontSize(16);
         addText(text);
+        setFontSize(oldSize);
         currentY -= lineHeight;
-        fontSize = 12;
     }
     
     void addText(string text) {
+        checkNewPage();
         content ~= "BT\n/F1 " ~ fontSize.to!string ~ " Tf\n";
         content ~= margin.to!string ~ " " ~ currentY.to!string ~ " Td\n";
         content ~= "(" ~ escapeText(text) ~ ") Tj\nET\n";
@@ -49,6 +68,7 @@ public:
     
     void addList(string[] items) {
         foreach(item; items) {
+            checkNewPage();
             content ~= "BT\n/F1 " ~ fontSize.to!string ~ " Tf\n";
             content ~= margin.to!string ~ " " ~ currentY.to!string ~ " Td\n";
             content ~= "(• " ~ escapeText(item) ~ ") Tj\nET\n";
@@ -57,6 +77,7 @@ public:
     }
     
     void addLink(string text, string url) {
+        checkNewPage();
         content ~= "BT\n/F1 " ~ fontSize.to!string ~ " Tf\n";
         content ~= margin.to!string ~ " " ~ currentY.to!string ~ " Td\n";
         content ~= "[(" ~ escapeText(text) ~ ") /URI (" ~ escapeText(url) ~ ")] TJ\nET\n";
@@ -64,15 +85,26 @@ public:
     }
     
     void addBlockquote(string text) {
-        content ~= "BT\n/F1 " ~ (fontSize-2).to!string ~ " Tf\n";
+        checkNewPage();
+        int oldSize = fontSize;
+        setFontSize(fontSize-2);
+        content ~= "BT\n/F1 " ~ fontSize.to!string ~ " Tf\n";
         content ~= (margin+10).to!string ~ " " ~ currentY.to!string ~ " Td\n";
         content ~= "(" ~ escapeText(text) ~ ") Tj\nET\n";
+        setFontSize(oldSize);
         currentY -= lineHeight;
     }
     
+    void checkNewPage() {
+        if (currentY < minY && pageCount < maxPages) {
+            newPage();
+        }
+    }
+    
     void newPage() {
-        currentY = 750;
         content ~= "showpage\n";
+        currentY = 750;
+        pageCount++;
     }
     
     ubyte[] generate() {
@@ -80,32 +112,43 @@ public:
         
         pdf ~= "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
         
-        pdf ~= "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n";
+        pdf ~= "2 0 obj\n<< /Type /Pages /Kids [";
+        foreach(i; 3..3+pageCount) {
+            pdf ~= i.to!string ~ " 0 R ";
+        }
+        pdf ~= "] /Count " ~ pageCount.to!string ~ " >>\nendobj\n";
         
-        pdf ~= "3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R >>\nendobj\n";
+        for(int i = 0; i < pageCount; i++) {
+            pdf ~= (3+i).to!string ~ " 0 obj\n<< /Type /Page /Parent 2 0 R /Contents " ~ (3+pageCount+i).to!string ~ " 0 R >>\nendobj\n";
+        }
         
-        string stream = "<< /Length " ~ content.length.to!string ~ " >>\n";
-        stream ~= "stream\n" ~ content ~ "endstream\n";
-        pdf ~= "4 0 obj\n" ~ stream ~ "endobj\n";
+        string[] contentPages = content.split("showpage\n");
+        for(int i = 0; i < contentPages.length; i++) {
+            string stream = "<< /Length " ~ contentPages[i].length.to!string ~ " >>\n";
+            stream ~= "stream\n" ~ contentPages[i] ~ "endstream\n";
+            pdf ~= (3+pageCount+i).to!string ~ " 0 obj\n" ~ stream ~ "endobj\n";
+        }
         
-        pdf ~= "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n";
+        pdf ~= (3+2*pageCount).to!string ~ " 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n";
         
-        pdf ~= "6 0 obj\n<<";
+        pdf ~= (4+2*pageCount).to!string ~ " 0 obj\n<<";
         if (!title.empty) pdf ~= " /Title (" ~ escapeText(title) ~ ")";
         if (!author.empty) pdf ~= " /Author (" ~ escapeText(author) ~ ")";
         pdf ~= " >>\nendobj\n";
         
         size_t xrefPos = pdf.length;
-        pdf ~= "xref\n0 7\n";
+        pdf ~= "xref\n0 " ~ (5+2*pageCount).to!string ~ "\n";
         pdf ~= "0000000000 65535 f \n";
         pdf ~= "0000000010 00000 n \n";
         pdf ~= "0000000069 00000 n \n";
-        pdf ~= "0000000128 00000 n \n";
-        pdf ~= "0000000209 00000 n \n";
-        pdf ~= "0000000392 00000 n \n";
-        pdf ~= "0000000483 00000 n \n";
         
-        pdf ~= "trailer\n<< /Size 7 /Root 1 0 R /Info 6 0 R >>\n";
+        size_t pos = 69;
+        for(int i = 0; i < 2*pageCount+2; i++) {
+            pdf ~= format("%010d", pos) ~ " 00000 n \n";
+            pos = pdf.length;
+        }
+        
+        pdf ~= "trailer\n<< /Size " ~ (5+2*pageCount).to!string ~ " /Root 1 0 R /Info " ~ (4+2*pageCount).to!string ~ " 0 R >>\n";
         pdf ~= "startxref\n" ~ xrefPos.to!string ~ "\n%%EOF\n";
         
         return cast(ubyte[])pdf;
@@ -184,32 +227,50 @@ void main(string[] args) {
     string outputFile;
     string title = "";
     string author = "";
+    int fontSize = 12;
+    int topMargin = 750;
+    int bottomMargin = 50;
+    int leftMargin = 50;
+    int rightMargin = 50;
     
     getopt(args,
         "input|i", "Input Markdown file", &inputFile,
         "output|o", "Output PDF file", &outputFile,
         "title|t", "Document title", &title,
-        "author|a", "Document author", &author
+        "author|a", "Document author", &author,
+        "font-size|f", "Base font size (default: 12)", &fontSize,
+        "top-margin|T", "Top margin (default: 750)", &topMargin,
+        "bottom-margin|B", "Bottom margin (default: 50)", &bottomMargin,
+        "left-margin|L", "Left margin (default: 50)", &leftMargin,
+        "right-margin|R", "Right margin (default: 50)", &rightMargin
     );
     
     if (inputFile.empty || outputFile.empty) {
         stderr.writeln("Error: Both input and output files must be specified");
         stderr.writeln("Usage: conv -i input.md -o output.pdf [options]");
         stderr.writeln("Options:");
-        stderr.writeln("  -t, --title     Document title");
-        stderr.writeln("  -a, --author    Document author");
+        stderr.writeln("  -t, --title        Document title");
+        stderr.writeln("  -a, --author       Document author");
+        stderr.writeln("  -f, --font-size    Base font size (default: 12)");
+        stderr.writeln("  -T, --top-margin   Top margin (default: 750)");
+        stderr.writeln("  -B, --bottom-margin Bottom margin (default: 50)");
+        stderr.writeln("  -L, --left-margin  Left margin (default: 50)");
+        stderr.writeln("  -R, --right-margin Right margin (default: 50)");
         return;
     }
     
     try {
         string mdContent = readText(inputFile);
         auto pdf = new PDFGenerator(title, author);
-        auto parser = MarkdownParser(mdContent);
+        pdf.setFontSize(fontSize);
+        pdf.setMargins(topMargin, bottomMargin, leftMargin, rightMargin);
         
+        auto parser = MarkdownParser(mdContent);
         processMarkdown(parser, pdf);
         
         std.file.write(outputFile, pdf.generate());
         writeln("Successfully converted ", inputFile, " to ", outputFile);
+        writeln("Pages generated: ", pdf.pageCount);
     } catch (Exception e) {
         stderr.writeln("Error: ", e.msg);
     }
